@@ -4,4 +4,4 @@ Upon publication, raw geochemical data and pertinent metadata not included in re
 
 Sequencing files not included in related previous publications (https://pubs.acs.org/doi/10.1021/acs.est.2c03566) will be made available on NCBI under BioProject PRJNA818364 with specific accessions listed within the manuscript Supporting Information.
 
-All raw data, pertitent metadata, and sequencing files are available upon request during the review process. 
+All supporting code and data are available upon request during the review process. 
