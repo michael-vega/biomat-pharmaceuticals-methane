@@ -1,0 +1,54 @@
+### This workflow describes the generic metatranscriptomics pipeline used for the manuscript, "Methane-Oxidizing Activity Enhances Sulfamethoxazole Biotransformation in a Benthic Constructed Wetland Biomat".
+
+### Additional details and steps are described in the manuscript and supporting information, as well as on The Wrighton Lab GitHub page: https://github.com/TheWrightonLab/
+
+### Download filtered metatranscriptomic reads: NCBI and JGI Gold Accessions are available in Table S7 of the manuscript
+
+### The majority of commands were performed using a Slurm job management system
+
+### All commands use default parameters if not specified
+
+### Packages / Softwares Used ###
+		#Sickle [v1.33]: https://github.com/najoshi/sickle
+		#bbmap [v38.70]: https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbmap-guide/
+		#HTSeq [v0.12.4]: https://htseq.readthedocs.io/en/master/
+
+-----------------------
+### Begin Workflow ###
+
+1. Unzip JGI filtered reads using gunzip
+	Inputs: zipped filtered reads files
+	Outputs: unzipped filtered reads files
+
+2. Deinterleave forward and reverse reads from the unzipped fastq file from Step 1 using deinterleave_fastq.sh
+	Inputs: filtered reads file from Step 1
+	Outputs: deinterleaved forward and reverse reads 
+
+3. Trim the filtered reads from JGI using sickle
+	Inputs: forward and reverse reads from Step 2
+	Outputs: trimmed forward and reverse reads
+	Parameters: pe, -t = Sanger
+
+4. Create reference from assembly for read mapping using bbmap
+	Inputs: MAG database (dereplicated medium and high quality only) from metagenomics workflow
+	Outputs: reference index from assembly 
+
+5. Map filtered and trimmed reads to MAG database using bbmap
+	Inputs: trimmed reads from Step 3, bbmap reference index from Step 4 
+	Outputs: sam files
+	Parameters: ambiguous = toss, usejni = t, length tag = t, idtag = t, idfilter = 0.99, printunmappedcount =t
+
+6. Convert sam files to bam files using 'samtools view'
+	Inputs: sam files from Step 5
+	Outputs: bam files
+
+7. Sort bam files using 'samtools sort'
+	Inputs: bam files from Step 6
+	Outputs: sorted bam files
+
+8. Count how many mapped metaT reads mapped to the concatenated MAG gene database (i.e., .gff files from DRAM) using HTSeq-count
+	Inputs: sorted bam file from Step 7, .gff files from DRAM annotation of MAGs (metagenomics workflow)
+	Outputs: counts text file to be imported into R for downstream analyses
+	
+### End Workflow ###
+-----------------------
