@@ -1,0 +1,141 @@
+### This workflow describes the generic metagenomics pipeline used for the manuscript, "Methane-Oxidizing Activity Enhances Sulfamethoxazole Biotransformation in a Benthic Constructed Wetland Biomat".
+
+### Additional details and steps are described in the manuscript and supporting information, as well as on The Wrighton Lab GitHub page: https://github.com/TheWrightonLab/
+
+### Download filtered metagenomic reads: NCBI and JGI Gold Accessions are available in Table S4 of the manuscript
+
+### The majority of commands were performed using a Slurm job management system
+
+### All commands use default parameters if not specified
+
+### Packages Used ###
+		#Sickle [v1.33]: https://github.com/najoshi/sickle
+		#idba_ud [v1.1.0]: https://github.com/loneknightpy/idba
+		#EukRep [v0.6.5]: https://github.com/patrickwest/EukRep
+		#metaBAT2 [v2.12.1]: https://bitbucket.org/berkeleylab/metabat/src/master/
+		#checkM [v1.1.2]: https://github.com/Ecogenomics/CheckM
+		#GTDB-tk [v1.5.0]: https://github.com/Ecogenomics/GTDBTk
+		#dRep [v2.6.2]: https://github.com/MrOlm/drep
+		#DRAM [v1.2]: https://github.com/WrightonLabCSU/DRAM
+		#Bowtie2 [v2.3.5]: https://github.com/BenLangmead/bowtie2
+
+----------------------
+### Begin Workflow ###
+
+1. Unzip JGI filtered reads using gunzip
+	Inputs: zipped filtered reads files
+	Outputs: unzipped filtered reads files
+
+2. Deinterleave forward and reverse reads from the unzipped fastq file from Step 1 using deinterleave_fastq.sh
+	Inputs: filtered reads file from Step 1
+	Outputs: deinterleaved forward and reverse reads 
+
+3. Trim the filtered reads from JGI using sickle
+	Inputs: forward and reverse reads from Step 2
+	Outputs: trimmed forward and reverse reads
+	Parameters: pe, -t = Sanger
+
+4. Assemble filtered and trimmed reads using idba-ud
+	Inputs: filtered and trimmed forward and reverse reads from Step 3
+	Outputs: assembled contigs/scaffolds
+
+5. Pull out contigs/scaffolds less than 2500 sequences using pullseq
+	Inputs: assembled contigs/scaffolds from Step 4
+	Outputs: assembled contigs/scaffolds > 2500 bp
+	Parameters: -m = 2500
+
+6. Parse prokaryotic scaffolds using EukRep
+	Inputs: assembled contigs/scaffolds > 2500 bp from Step 5
+	Outputs: eukaryotic vs prokaryotic assembled contigs/scaffolds > 2500 bp
+	Parameters: --min == 2500
+	#Note: performed on all assemblies from all samples, including the 'bottom' subassembly 
+
+7. Build index file for binning using bowtie2-build 
+	Inputs: assembled contigs/scaffolds > 2500 bp from Step 5 OR prokaryotic assembled contigs/scaffolds > 2500 bp from Step 6
+	Outputs: reference index
+	#Note: performed on all assemblies from all samples, including the 'bottom' subassembly and both prokaryotic EukRep parsed contigs/scaffolds but also raw assembled contigs/scaffolds
+
+8. Align index file against trimmed reads to create sam files using bowtie2
+	Inputs: assembled contigs/scaffolds > 2500 bp from Step 5 OR prokaryotic assembled contigs/scaffolds > 2500 bp from Step 6, reference index from Step 7
+	Outputs: sam files, mapped and unmapped paired contigs/scaffolds
+	Parameters: --fast
+
+9. Convert sam to bam files using 'samtools view' 
+	Inputs: sam files from Step 8
+	Outputs: bam files
+
+10. Sort bam files using 'samtools sort'
+	Inputs: bam files from Step 9
+	Outputs: sorted bam files
+
+11. Estimate contig/scaffold coverage depth using jgi_summarize_bam_contig_depths
+	Inputs: sorted bam files from Step 10
+	Outputs: text file of coverage depth and 
+	Parameters: --minContigDepth = 1, --minContigLength = 1000
+
+12. Bin contigs/scaffolds into MAGs using metabat2
+	Inputs: assembled contigs/scaffolds > 2500 bp from Step 5 OR prokaryotic assembled contigs/scaffolds > 2500 bp from Step 6, text file of coverage depth from Step 11
+	Outputs: bins, binning statistics
+	Parameters:--verysensitive
+
+13. Perform (sub)assembly on 'bottom' sample reads that did not map to 'bottom' bins 
+	13A. Map 'bottom' sample reads to 'bottom' sample bins using bbmap 
+		Inputs: Concatenated bins from 'bottom' sample, forward and reverse trimmed and filtered reads from 'bottom' sample from Step 3
+		Outputs: forward and reverse trimmed and filtered reads which did not map to 'bottom' sample bins
+		Parameters: minid = 100
+	
+	13B. Assemble reads which did not map to 'bottom' sample bins using idba-ud
+		Inputs: filtered and trimmed forward and reverse reads which did not map to 'bottom' sample bins from Step 13A
+		Outputs: (sub)assembled contigs/scaffolds 
+	#Note: Steps 5 - 12 then perform on 'bottom' sample subassembly 
+
+14. Evaluate bin quality and estimate genome statistics using checkM
+	Inputs: path to all bins
+	Outputs: genome statistics and quality metrics for all bins
+
+15. Depreplicate bins using dRep
+	Inputs: path to all bins, genome statistics .csv file containing completeness, contamination, and strain heterogeneity 
+	Outputs: dereplicated bins and selection statistics/criteria
+	Parameters: -comp = 50, -con = 10,  -sa S_ANI = 0.99
+
+16. Assign bin taxonomy using GTDB-tk 
+	Inputs: dereplicated MAG database from Step 15
+	Outputs: GTDB-tk taxonomy of MAG database 
+
+17. Annotate MAG database using DRAM
+	Inputs: dereplicated MAG database from Step 15
+	Outputs: MAG contig/scaffold annotations
+	Parameters: --min_contig_size = 2499 (includes 2500 bp contigs/scaffolds)
+	
+18. Distill MAG annotations using DRAM 
+	Inputs: MAG contig/scaffold annotations from Step 17
+	Outputs: distillate and liquor annotation files 
+
+19. Concatenate MAG fastas to a single fasta for downstream processing using 'cat' 
+	Inputs: dereplicated MAG database from Step 15
+	Outputs: concatenated fasta of all MAG contigs/scaffolds
+
+20. Build index file from concatenated MAG database using bowtie2-build
+	Inputs: concatenated fasta of all MAG contigs/scaffolds from Step 19
+	Outputs: reference index
+
+21. Map reads to MAG database using bowtie2 via map_reads_fasta_abundance.py
+	Inputs: concatenated fasta of all MAG contigs/scaffolds from Step 19, filtered and trimmed forward and reverse reads from Step 3, reference index from Step 20
+	Outputs: text file of mapped read counts for all contigs/scaffolds, read mapping statistics
+	Parameters: -m = 3, --min_coverage = 5, --min_percent_contig_coverage = 80, -u = F, -d = F, D = 10, -R = 2, -N = 1, -L = 22, -i = S,0,2.50 
+
+22. Pull assembled contigs/scaffolds not present in MAG database (i.e, 'unbinned') using pullseq
+	Inputs: concatenated fasta of all MAG contigs/scaffolds from Step 19, assembled contigs/scaffolds > 2500 bp from Step 5
+	Outputs: fasta of unbinned contigs/scaffolds > 2500 bp
+
+23. Annotate unbinned contigs/scaffolds using DRAM
+	Inputs: fasta of unbinned contigs/scaffolds > 2500 bp from Step 22
+	Outputs: unbinned contig/scaffold annotations
+	Parameters: --min_contig_size = 2499 (includes 2500 bp contigs/scaffolds)
+	
+24. Distill MAG annotations using DRAM 
+	Inputs: unbinned contig/scaffold annotations from Step 23
+	Outputs: distillate and liquor annotation files 
+
+### End Workflow ###
+----------------------
